@@ -41,10 +41,7 @@ const (
 	// Gyro event codes
 	GyroX = 4 // tilt left/right
 	GyroY = 5 // tilt forwards/backwards
-
-	// Accelerometer codes
-	AccelY = 6 // up/down
-	// 7??
+	GyroZ = 6 // ???
 )
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/time.h#L15
@@ -74,6 +71,18 @@ func (as *AnalogStick) String() string {
 	return fmt.Sprintf("%+04d, %+04d", as.X, as.Y)
 }
 
+// Also stored as int32
+type Orientation struct {
+	X int32
+	Y int32
+	Z int32
+}
+
+// TODO: Scale to the range of values
+func (o *Orientation) String() string {
+	return fmt.Sprintf("x=%+04d, y=%+04d, z=%+04d", o.X, o.Y, o.Z)
+}
+
 type SA struct {
 	r          io.Reader
 
@@ -99,13 +108,17 @@ type SA struct {
 	// Sticks
 	LeftStick  *AnalogStick
 	RightStick *AnalogStick
+
+	// Gyro
+	Orientation *Orientation
 }
 
 func New(reader io.Reader) *SA {
 	return &SA{
 		r:          reader,
-		LeftStick:  &AnalogStick{0, 0},
-		RightStick: &AnalogStick{0, 0},
+		LeftStick:  &AnalogStick{},
+		RightStick: &AnalogStick{},
+		Orientation: &Orientation{},
 	}
 }
 
@@ -169,7 +182,8 @@ func (sa *SA) String() string {
 	}
 
 	return fmt.Sprintf(
-		"&Sixaxis{L[%s] R[%s] dpad[%s] buttons[%s]}",
+		"&Sixaxis{Gyro=%s, L[%s] R[%s] dpad[%s] buttons[%s]}",
+		sa.Orientation,
 		sa.LeftStick,
 		sa.RightStick,
 		strings.Join(dpad, ", "),
@@ -255,6 +269,16 @@ func (sa *SA) Update(event *inputEvent) {
 
 		case RightStickY:
 			sa.RightStick.Y = event.Value
+
+
+		case GyroX:
+			sa.Orientation.X = event.Value
+
+		case GyroY:
+			sa.Orientation.Y = event.Value
+
+		case GyroZ:
+			sa.Orientation.Z = event.Value
 
 		default:
 			printEvent(event)
