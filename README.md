@@ -8,7 +8,7 @@ working yet, but so far it supports:
 * [x] Digial Buttons
 * [x] Analog Sticks
 * [x] Analog Triggers
-* [ ] Pressure-sensitive Buttons
+* [x] Pressure-sensitive Buttons
 * [ ] Accelerometer
 * [x] Gyroscope
 * [ ] Rumble
