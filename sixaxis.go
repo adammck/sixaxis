@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 )
 
@@ -11,14 +12,14 @@ const (
 
 	// Event Types
 	tDigital = 1
-	tAnalog = 3
+	tAnalog  = 3
 
 	// Digital event codes 0 or 1
-	bcSelect   = 288
-	bcL3       = 289
-	bcR3       = 290
-	bcStart    = 291
-	bcPS       = 304
+	bcSelect = 288
+	bcL3     = 289
+	bcR3     = 290
+	bcStart  = 291
+	bcPS     = 304
 
 	// Analog sticks: -128 to +127
 	LeftStickX  = 0
@@ -26,24 +27,24 @@ const (
 	RightStickX = 2
 	RightStickY = 3
 
-	// Gyroscope ... ?
+	// Gyroscope
 	GyroX = 4 // left/right
 	GyroY = 5 // forwards/backwards
 	GyroZ = 6 // ???
 
 	// Analog buttons: 0 to 255
-	aUp    = 8
-	aRight = 9
-	aDown  = 10
-	aLeft  = 11
-	aL2 = 12
-	aR2 = 13
-	aL1 = 14
-	aR1 = 15
+	aUp       = 8
+	aRight    = 9
+	aDown     = 10
+	aLeft     = 11
+	aL2       = 12
+	aR2       = 13
+	aL1       = 14
+	aR1       = 15
 	aTriangle = 26
-	aCircle = 27
-	aCross = 28
-	aSquare = 29
+	aCircle   = 27
+	aCross    = 28
+	aSquare   = 29
 )
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/time.h#L15
@@ -75,35 +76,56 @@ func (as *AnalogStick) String() string {
 
 // Also stored as int32
 type Orientation struct {
-	X int32
-	Y int32
-	Z int32
+	RawX int32
+	RawY int32
+	RawZ int32
+}
+
+// X returns the orientation on the X axis (aka roll, or bank), in the range -1
+// (90 degrees left) to +1 (90 degrees right).
+func (o *Orientation) X() float64 {
+
+	// Note that the scale is inverted for this axis. I have no idea why.
+	// See: https://github.com/falkTX/qtsixa/blob/master/sixad/sixaxis.cpp#L97
+	return clamp((float64(o.RawX) + 512) / 110)
+}
+
+// Y returns the orientation on the Y axis (aka pitch), in the range -1 (90
+// degrees forwards, away from the player) to +1 (90 degrees backwards).
+func (o *Orientation) Y() float64 {
+	return clamp((float64(o.RawY) - 512) / 110)
+}
+
+// Z returns the orientation on the Z axis. It's unclear what this axis
+// represents, but it doesn't seem to be the heading.
+func (o *Orientation) Z() float64 {
+	return clamp((float64(o.RawZ) - 512) / 110)
 }
 
 // TODO: Scale to the range of values
 func (o *Orientation) String() string {
-	return fmt.Sprintf("x=%+04d, y=%+04d, z=%+04d", o.X, o.Y, o.Z)
+	return fmt.Sprintf("&Orientation{x=%+04d, y=%+04d, z=%+04d}", o.RawX, o.RawY, o.RawZ)
 }
 
 type SA struct {
 	r io.Reader
 
 	// Digital Buttons
-	Select   bool
-	L3       bool
-	R3       bool
-	Start    bool
-	PS       bool
+	Select bool
+	L3     bool
+	R3     bool
+	Start  bool
+	PS     bool
 
 	// Analog buttons: 0-255
-	Up    int32
-	Right int32
-	Down  int32
-	Left  int32
-	L2    int32
-	R2    int32
-	L1    int32
-	R1    int32
+	Up       int32
+	Right    int32
+	Down     int32
+	Left     int32
+	L2       int32
+	R2       int32
+	L1       int32
+	R1       int32
 	Triangle int32
 	Circle   int32
 	Cross    int32
@@ -123,7 +145,7 @@ func New(reader io.Reader) *SA {
 		r:           reader,
 		LeftStick:   &AnalogStick{},
 		RightStick:  &AnalogStick{},
-		Orientation: &Orientation{},
+		Orientation: &Orientation{-512, 512, 512},
 	}
 }
 
@@ -145,6 +167,17 @@ func (sa *SA) String() string {
 		s = append(s, fmt.Sprintf("RY=%+04d", sa.RightStick.Y))
 	}
 
+	// gyro
+	if sa.Orientation.RawX != 0 {
+		s = append(s, fmt.Sprintf("OX=%+04d", sa.Orientation.RawX))
+	}
+	if sa.Orientation.RawY != 0 {
+		s = append(s, fmt.Sprintf("OY=%+04d", sa.Orientation.RawY))
+	}
+	if sa.Orientation.RawZ != 0 {
+		s = append(s, fmt.Sprintf("OZ=%+04d", sa.Orientation.RawZ))
+	}
+
 	// dpad
 	if sa.Up > 0 {
 		s = append(s, fmt.Sprintf("up=%d", sa.Up))
@@ -155,7 +188,7 @@ func (sa *SA) String() string {
 	if sa.Left > 0 {
 		s = append(s, fmt.Sprintf("left=%d", sa.Left))
 	}
-	if sa.Right >0 {
+	if sa.Right > 0 {
 		s = append(s, fmt.Sprintf("right=%d", sa.Right))
 	}
 
@@ -255,13 +288,13 @@ func (sa *SA) Update(event *inputEvent) {
 			sa.RightStick.Y = event.Value
 
 		case GyroX:
-			sa.Orientation.X = event.Value
+			sa.Orientation.RawX = event.Value // inverted?
 
 		case GyroY:
-			sa.Orientation.Y = event.Value
+			sa.Orientation.RawY = event.Value
 
 		case GyroZ:
-			sa.Orientation.Z = event.Value
+			sa.Orientation.RawZ = event.Value
 
 		case aUp:
 			sa.Up = event.Value
@@ -300,13 +333,11 @@ func (sa *SA) Update(event *inputEvent) {
 			sa.Square = event.Value
 
 		default:
-			//fmt.Println("Unknown event code!")
-			//printEvent(event)
+			//fmt.Printf("Unknown event code: %s\n", dumpEvent(event))
 		}
 
 	default:
-		//fmt.Println("Unknown Event.Type")
-		//printEvent(event)
+		//fmt.Printf("Unknown event type: %s\n", dumpEvent(event))
 	}
 }
 
@@ -325,7 +356,10 @@ func buttonToBool(value int32) bool {
 	return value == 1
 }
 
+func dumpEvent(event *inputEvent) string {
+	return fmt.Sprintf("type=%04d, code=%04d, value=%08d\n", event.Type, event.Code, event.Value)
+}
 
-func printEvent(event *inputEvent) {
-	fmt.Printf("type=%04d, code=%04d, value=%08d\n", event.Type, event.Code, event.Value)
+func clamp(v float64) float64 {
+	return math.Min(math.Max(v, -1), 1)
 }
